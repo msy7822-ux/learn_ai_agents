@@ -1,2 +1,7 @@
 boto3
 dotenv
+strands-agents
+feedparser
+langchain
+langchain_google_genai
+langgraph
