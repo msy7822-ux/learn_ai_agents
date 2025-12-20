@@ -3,5 +3,8 @@ dotenv
 strands-agents
 feedparser
 langchain
+langchain-aws
+langchain-anthropic
 langchain_google_genai
 langgraph
+langchain_tavily
