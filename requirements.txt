@@ -8,3 +8,4 @@ langchain-anthropic
 langchain_google_genai
 langgraph
 langchain_tavily
+langchain-mcp-adapters
