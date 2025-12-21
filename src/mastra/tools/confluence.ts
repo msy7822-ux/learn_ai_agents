@@ -3,15 +3,25 @@ import { createTool } from "@mastra/core/tools";
 import { z } from "zod";
 
 // 環境変数からAPIキーなどを取得する
-const CONFLUENCE_API_KEY = process.env.CONFLUENCE_API_KEY || "";
-const CONFLUENCE_BASE_URL = process.env.CONFLUENCE_BASE_URL || "";
+// 互換性のため CONFLUENCE_API_TOKEN / CONFLUENCE_API_KEY の両方を許可する
+const CONFLUENCE_API_KEY =
+  process.env.CONFLUENCE_API_TOKEN || process.env.CONFLUENCE_API_KEY || "";
+const CONFLUENCE_BASE_URL_RAW = process.env.CONFLUENCE_BASE_URL || "";
 const CONFLUENCE_USER_EMAIL = process.env.CONFLUENCE_USER_EMAIL || "";
+
+function normalizeConfluenceBaseUrl(raw: string) {
+  // 例: https://xxx.atlassian.net/wiki を渡しても動くように正規化する
+  return raw.replace(/\/+$/, "").replace(/\/wiki$/, "");
+}
+
+const CONFLUENCE_BASE_URL = normalizeConfluenceBaseUrl(CONFLUENCE_BASE_URL_RAW);
 
 function assertConfluenceConfig() {
   const missing: string[] = [];
   if (!CONFLUENCE_BASE_URL) missing.push("CONFLUENCE_BASE_URL");
   if (!CONFLUENCE_USER_EMAIL) missing.push("CONFLUENCE_USER_EMAIL");
-  if (!CONFLUENCE_API_KEY) missing.push("CONFLUENCE_API_KEY");
+  if (!CONFLUENCE_API_KEY)
+    missing.push("CONFLUENCE_API_TOKEN / CONFLUENCE_API_KEY");
 
   if (missing.length > 0) {
     throw new Error(
@@ -60,7 +70,7 @@ async function callConfluenceAPI(endpoint: string, options?: RequestInit) {
       throw new Error(
         `HTTP error! status: 401 (Unauthorized). ` +
           `Confluence認証に失敗しました。` +
-          `CONFLUENCE_USER_EMAIL / CONFLUENCE_API_KEY（APIトークン）/ CONFLUENCE_BASE_URL を確認してください。`
+          `CONFLUENCE_USER_EMAIL / CONFLUENCE_API_TOKEN または CONFLUENCE_API_KEY（APIトークン）/ CONFLUENCE_BASE_URL を確認してください。`
       );
     }
 
@@ -81,6 +91,17 @@ export const confluenceSearchPagesTool = createTool({
   description: "Confluenceのページを検索する",
   inputSchema: z.object({
     cql: z.string().describe("Confluence Query Languageで検索するクエリ"),
+    fallbackCql: z
+      .string()
+      .optional()
+      .describe("検索0件だった場合に試すフォールバックCQL（任意）"),
+    limit: z
+      .number()
+      .int()
+      .min(1)
+      .max(50)
+      .optional()
+      .describe("取得件数（1〜50、任意）"),
   }),
   outputSchema: z.object({
     pages: z.array(
@@ -92,27 +113,75 @@ export const confluenceSearchPagesTool = createTool({
     ),
     total: z.number().describe("検索結果の総数"),
     error: z.string().describe("エラーメッセージ").optional(),
+    debug: z
+      .object({
+        triedCqls: z.array(z.string()),
+        endpoint: z.string(),
+      })
+      .optional()
+      .describe("デバッグ情報（任意）"),
   }),
   execute: async ({ context }) => {
-    const params = new URLSearchParams();
-    params.append("cql", context.cql);
-
     try {
-      // APIコールする
-      const data = await callConfluenceAPI(`/search?${params.toString()}`);
+      const triedCqls: string[] = [];
+      const limit = context.limit ?? 10;
 
-      // 検索結果から一覧を作成する
-      const pages = data.results.map((result: any) => ({
-        id: result.content?.id,
-        title: result.content?.title,
-        url: result.url
-          ? `${CONFLUENCE_BASE_URL}/wiki/${result.url}`
-          : undefined,
-      }));
+      const runSearch = async (cql: string) => {
+        const params = new URLSearchParams();
+        params.append("cql", cql);
+        params.append("limit", String(limit));
+        // Confluence Cloud の content search を使用（結果が扱いやすい）
+        const endpoint = `/content/search?${params.toString()}`;
+        const data = await callConfluenceAPI(endpoint);
+        const pages = (data.results ?? []).map((result: any) => {
+          const webui = result?._links?.webui;
+          const url =
+            typeof webui === "string" && webui.length > 0
+              ? `${CONFLUENCE_BASE_URL}/wiki${webui}`
+              : "";
+          return {
+            id: String(result?.id ?? ""),
+            title: String(result?.title ?? ""),
+            url,
+          };
+        });
+        return { data, pages, endpoint };
+      };
+
+      triedCqls.push(context.cql);
+      let { data, pages, endpoint } = await runSearch(context.cql);
+
+      if (
+        (data?.total ?? pages.length ?? 0) === 0 &&
+        context.fallbackCql &&
+        context.fallbackCql.trim().length > 0 &&
+        context.fallbackCql.trim() !== context.cql.trim()
+      ) {
+        triedCqls.push(context.fallbackCql);
+        const r = await runSearch(context.fallbackCql);
+        data = r.data;
+        pages = r.pages;
+        endpoint = r.endpoint;
+      }
+
+      const total = Number(data?.total ?? pages.length ?? 0);
+
+      if (!pages || pages.length === 0) {
+        return {
+          pages: [],
+          total: 0,
+          error:
+            `検索結果が見つかりませんでした。` +
+            `（試行CQL: ${triedCqls.join(" | ")}）` +
+            `\nヒント: space = "SPACEKEY" でスペースを絞る / title ~ "..." を併用 / 権限・検索インデックスを確認`,
+          debug: { triedCqls, endpoint },
+        };
+      }
 
       return {
         pages,
-        total: data.total,
+        total,
+        debug: { triedCqls, endpoint },
       };
     } catch (error) {
       return {
@@ -174,11 +243,21 @@ export const confluenceGetPageDetailTool = createTool({
       const data = await callConfluenceAPI(endpoint);
 
       // ページの詳細を作成する
+      const webui = data?._links?.webui;
+      const url =
+        typeof webui === "string" && webui.length > 0
+          ? `${CONFLUENCE_BASE_URL}/wiki${webui}`
+          : "";
+      const content =
+        data?.body?.storage?.value ??
+        data?.body?.view?.value ??
+        data?.body?.editor?.value ??
+        undefined;
       const page = {
-        id: data.id,
-        title: data.title,
-        url: data.url,
-        content: data.content,
+        id: String(data?.id ?? ""),
+        title: String(data?.title ?? ""),
+        url,
+        content,
       };
 
       return {
