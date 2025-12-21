@@ -4,7 +4,7 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "dev": "tsx src/main.ts",
+    "dev": "mastra dev",
     "typecheck": "tsc --noEmit"
   },
   "keywords": [],
@@ -12,8 +12,33 @@
   "license": "ISC",
   "type": "commonjs",
   "devDependencies": {
-    "@types/node": "^25.0.3",
-    "tsx": "^4.21.0",
-    "typescript": "^5.9.3"
-  }
+    "@types/node": "^20.19.27",
+    "tsx": "^4.20.5",
+    "typescript": "^5.9.2"
+  },
+  "directories": {
+    "doc": "docs"
+  },
+  "dependencies": {
+    "@ai-sdk/amazon-bedrock": "^3.0.13",
+    "@ai-sdk/openai": "^1.3.24",
+    "@mastra/core": "^0.15.2",
+    "@mastra/libsql": "^0.13.7",
+    "@mastra/loggers": "^0.10.9",
+    "@mastra/memory": "^0.14.2",
+    "esbuild": "^0.27.2",
+    "get-tsconfig": "^4.13.0",
+    "mastra": "^0.11.3",
+    "resolve-pkg-maps": "^1.0.0",
+    "undici-types": "^7.16.0",
+    "zod": "^3.25.76"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/msy7822-ux/learn_ai_agents.git"
+  },
+  "bugs": {
+    "url": "https://github.com/msy7822-ux/learn_ai_agents/issues"
+  },
+  "homepage": "https://github.com/msy7822-ux/learn_ai_agents#readme"
 }
