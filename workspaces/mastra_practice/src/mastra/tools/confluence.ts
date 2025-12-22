@@ -2,6 +2,32 @@
 import { createTool } from "@mastra/core/tools";
 import { z } from "zod";
 
+type ConfluenceLinks = {
+  webui?: string;
+};
+
+type ConfluenceContentSearchResult = {
+  id?: string | number;
+  title?: string;
+  _links?: ConfluenceLinks;
+};
+
+type ConfluenceContentSearchResponse = {
+  results?: ConfluenceContentSearchResult[];
+  total?: number;
+};
+
+type ConfluencePageDetailResponse = {
+  id?: string | number;
+  title?: string;
+  _links?: ConfluenceLinks;
+  body?: {
+    storage?: { value?: string };
+    view?: { value?: string };
+    editor?: { value?: string };
+  };
+};
+
 // 環境変数からAPIキーなどを取得する
 // 互換性のため CONFLUENCE_API_TOKEN / CONFLUENCE_API_KEY の両方を許可する
 const CONFLUENCE_API_KEY =
@@ -132,8 +158,10 @@ export const confluenceSearchPagesTool = createTool({
         params.append("limit", String(limit));
         // Confluence Cloud の content search を使用（結果が扱いやすい）
         const endpoint = `/content/search?${params.toString()}`;
-        const data = await callConfluenceAPI(endpoint);
-        const pages = (data.results ?? []).map((result: any) => {
+        const data = (await callConfluenceAPI(
+          endpoint
+        )) as ConfluenceContentSearchResponse;
+        const pages = (data.results ?? []).map((result) => {
           const webui = result?._links?.webui;
           const url =
             typeof webui === "string" && webui.length > 0
@@ -240,7 +268,9 @@ export const confluenceGetPageDetailTool = createTool({
     try {
       // APIコールする
       const endpoint = `/content/${context.pageId}?${params.toString() ?? ""}`;
-      const data = await callConfluenceAPI(endpoint);
+      const data = (await callConfluenceAPI(
+        endpoint
+      )) as ConfluencePageDetailResponse;
 
       // ページの詳細を作成する
       const webui = data?._links?.webui;
