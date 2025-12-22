@@ -84,6 +84,7 @@ export const handsOnWorkflow = createWorkflow({
             limit: 10,
           };
         } catch (error) {
+          console.error("エラーが発生しました。", error);
           return {
             cql: baseFallbackCql,
             fallbackCql: baseFallbackCql,
@@ -179,15 +180,6 @@ export const handsOnWorkflow = createWorkflow({
           };
         }
 
-        const outputSchema = z.object({
-          issues: z.array(
-            z.object({
-              title: z.string(),
-              body: z.string(),
-            })
-          ),
-        });
-
         // プロンプト
         const prompt = `以下のConfluenceページの内容は要件書です。
         この要件書を分析して、開発バックログのGitHub Issueを複数作成するための情報を生成してください。
@@ -204,7 +196,7 @@ export const handsOnWorkflow = createWorkflow({
         - 2つのIssueを作成
         - 曖昧な部分は「要確認」として記載する`;
 
-        const safeJsonParse = (text: string): any => {
+        const safeJsonParse = (text: string) => {
           const trimmed = text.trim();
           try {
             return JSON.parse(trimmed);
@@ -245,13 +237,14 @@ export const handsOnWorkflow = createWorkflow({
           }
 
           const issues = rawIssues
-            .filter((issue: any) => issue && typeof issue === "object")
-            .map((issue: any) => ({
+            .filter((issue) => issue && typeof issue === "object")
+            .map((issue: { title: string; body: string }) => ({
               title: String(issue.title ?? "").trim(),
               body: String(issue.body ?? "").trim(),
             }))
             .filter(
-              (issue: any) => issue.title.length > 0 && issue.body.length > 0
+              (issue: { title: string; body: string }) =>
+                issue.title.length > 0 && issue.body.length > 0
             );
 
           return {
