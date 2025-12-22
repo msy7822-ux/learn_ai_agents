@@ -31,10 +31,41 @@ export async function POST(request: NextRequest) {
         repo,
       },
     });
-    return NextResponse.json(result);
+
+    let message;
+    let isSuccess;
+
+    if (result.status === "success" && result.result.success) {
+      message = "ワークフローが正常に完了しました";
+      isSuccess = true;
+    } else {
+      message = "ワークフローが正常に完了しました";
+      isSuccess = false;
+    }
+
+    const workflowOutput = result.status === "success" ? result.result : null;
+    const createdIssues = workflowOutput?.createdIssues ?? [];
+
+    return NextResponse.json({
+      success: isSuccess,
+      confluencePages: [
+        {
+          title: query,
+          message: "要件書の検索と取得を実行しました",
+        },
+      ],
+      message,
+      createdIssues,
+      steps: result.steps
+        ? Object.keys(result.steps).map((stepId) => ({
+            stepId,
+            status: result.steps[stepId]?.status,
+          }))
+        : [],
+    });
   } catch (error) {
     return NextResponse.json(
-      { error: "エラーが発生しました。" + String(error) },
+      { error: "ワークフローの実行中にエラーが発生しました。" + String(error) },
       { status: 500 }
     );
   }
